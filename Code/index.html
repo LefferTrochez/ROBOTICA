@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DuqueXII Control Web App</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div class="logo-section">
+        <h1>DuqueXII</h1>
+        <img src="{{ url_for('static', filename='DuqueXII-icon.png') }}" alt="DuqueXII Icon">
+    </div>
+    <div class="main-container">
+        <div class="sensor-values" style="background-color: #D0CFCD; color: black;">
+            <h3 style="font-weight: bold;">Sensores importantes:</h3>
+            <p>Nivel de ruido: <span id="noise-level">{{ sensor_values['noise_level'] }}</span> dB</p>
+            <p>Temperatura ambiente: <span id="ambient-temp">{{ sensor_values['ambient_temp'] }}</span> °C</p>
+            <p>Temperatura corporal: <span id="body-temp">{{ sensor_values['body_temp'] }}</span> °C</p>
+            <p>Presencia de gas: <span id="gas-level">{{ sensor_values['gas_level'] }}</span> ppm</p>
+        </div>
+        <div class="video-section">
+            <img src="{{ url_for('video_feed') }}" alt="Video Stream">
+        </div>
+    </div>
+    <div class="warning-section" style="background-color: #D0CFCD; color: black;">
+        <h3 style="font-weight: bold;">Mensaje de advertencia:</h3>
+        <p id="warning-text">{{ warning_message }}</p>
+    </div>
+    <div class="movement-buttons">
+        <button onclick="move('up')">↑</button>
+        <div class="middle-row">
+            <button onclick="move('left')">←</button>
+            <button onclick="move('stop')">◼</button>
+            <button onclick="move('right')">→</button>
+        </div>
+        <button onclick="move('down')">↓</button>
+    </div>
+    <div class="mode-buttons">
+        <button onclick="setMode('active')">
+            <img src="{{ url_for('static', filename='active-icon.png') }}" alt="Modo Activo">
+        </button>
+        <button onclick="setMode('sleep')">
+            <img src="{{ url_for('static', filename='sleep-icon.png') }}" alt="Modo Sleep">
+        </button>
+        <button onclick="clearWarning()">
+            <img src="{{ url_for('static', filename='silent-icon.png') }}" alt="Modo Silencio">
+        </button>
+    </div>
+    <div class="centered-icon">
+        <img id="status-icon" src="{{ url_for('static', filename='good-icon.png') }}" alt="Good Icon">
+    </div>
+    <div class="mode-buttons">
+        <button onclick="fetch('/set_mode_active')">
+            <img src="{{ url_for('static', filename='active-icon.png') }}" alt="Modo Activo">
+        </button>
+        <button onclick="fetch('/set_mode_sleep')">
+            <img src="{{ url_for('static', filename='sleep-icon.png') }}" alt="Modo Sleep">
+        </button>
+        <button onclick="fetch('/set_buzzer_off')">
+            <img src="{{ url_for('static', filename='silent-icon.png') }}" alt="Modo Silencio">
+        </button>
+    </div>
+    <audio id="warningSound" src="{{ url_for('static', filename='emergency-sound.mp3') }}"></audio>
+    <script>
+        let isWarningActive = false; 
+        document.addEventListener("DOMContentLoaded", () => {
+            updateValues();
+            setInterval(updateValues, 100);
+        });
+        function handleWarning(active) {
+            const warningSound = document.getElementById('warningSound');
+
+            if (active) { 
+                if (!isWarningActive) { 
+                    if (warningSound) {
+                        warningSound.play().catch(error => console.warn("Error al reproducir sonido:", error));
+                    }
+                    if (navigator.vibrate) {
+                        navigator.vibrate([1000, 200, 1000]); 
+                    }
+                    console.log("Advertencia activa: Sonido y vibración activados.");
+                }
+                isWarningActive = true; 
+            } else {
+                if (isWarningActive) { 
+                    if (warningSound) {
+                        warningSound.pause();
+                        warningSound.currentTime = 0; 
+                    }
+                    if (navigator.vibrate) {
+                        navigator.vibrate(0); 
+                    }
+                    console.log("Advertencia desactivada: Sonido y vibración detenidos.");
+                }
+                isWarningActive = false; 
+            }
+        }
+        function updateValues() {
+            fetch('/get_sensor_data')
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Datos recibidos:", data);
+                    const warningTextElement = document.getElementById("warning-text");
+                    warningTextElement.textContent = data.warning_message || "Todo está bien.";
+                    const bodyElement = document.body;
+                    const statusIcon = document.getElementById("status-icon");
+                    if (data.warning_message === "Todo está bien.") {
+                        bodyElement.style.backgroundColor = "#9cd8a0";
+                        statusIcon.src = "{{ url_for('static', filename='good-icon.png') }}";
+                        handleWarning(false); 
+                    } else {
+                        bodyElement.style.backgroundColor = "#d97474";
+                        statusIcon.src = "{{ url_for('static', filename='bad-icon.png') }}";
+                        handleWarning(true); 
+                    }
+                    const sensorValuesElements = {
+                        noise: document.getElementById("noise-level"),
+                        ambientTemp: document.getElementById("ambient-temp"),
+                        bodyTemp: document.getElementById("body-temp"),
+                        gasLevel: document.getElementById("gas-level")
+                    };
+                    sensorValuesElements.noise.textContent = data.sensor_values.noise_level || "--";
+                    sensorValuesElements.ambientTemp.textContent = data.sensor_values.ambient_temp || "--";
+                    sensorValuesElements.bodyTemp.textContent = data.sensor_values.body_temp || "--";
+                    sensorValuesElements.gasLevel.textContent = data.sensor_values.gas_level || "--";
+                })
+                .catch(error => console.error("Error actualizando valores:", error));
+        }
+        function setMode(mode) {
+            if (mode === 'active') {
+                fetch('/set_mode_on');
+            } else if (mode === 'sleep') {
+                fetch('/set_mode_off');
+            }
+        }
+        function clearWarning() {
+            fetch('/buzzer_off');
+        }
+        function move(direction) {
+            if (direction === 'up') {
+                fetch('/move_up');
+            } else if (direction === 'down') {
+                fetch('/move_down');
+            } else if (direction === 'left') {
+                fetch('/move_left');
+            } else if (direction === 'right') {
+                fetch('/move_right');
+            } else if (direction === 'stop') {
+                fetch('/move_stop');
+            }
+        }
+    </script>
+</body>
+</html>
